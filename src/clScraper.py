@@ -1,3 +1,5 @@
+# code started with craigslist-mailer.py but doesn't much resemble it anymore
+
 import xml.dom.minidom
 
 import sys
@@ -21,9 +23,8 @@ def parseCl(city, category):
    document = xml.dom.minidom.parse(urllib2.urlopen('http://' + city + '.craigslist.org/' + category + '/index.rss'))
 
    conn = sqlite3.connect(conf.DB_FILENAME)
-   f = open('clScraper.txt','w')
 
-   runtimeId = start_runtime()
+   runtimeId = start_runtime(conn)
    cityId = get_id_by_prefix('city', city)
    categoryId = get_id_by_prefix('category', category)
 
@@ -61,26 +62,17 @@ def parseCl(city, category):
       ) # Date is in YYYY-MM-DD<T>HH:MM:SS-TZONE format retrieve month and date 
 
       conn.execute("insert into listing (title, name, location, price, link, description, listingDate,city_id,category_id,runtime_id) values (?,?,?,?,?,?,?,?,?,?)", (title,listingName,listingLocation,listingPrice,link,description,listingDateConverted,cityId,categoryId,runtimeId))
-
-      print >>f, "----------------------Item-------------------------------"
-      print >>f, title.encode('UTF8','replace')
-      print >>f, listingName.encode('UTF8','replace')
-      print >>f, listingPrice.encode('UTF8','replace')
-      print >>f, listingLocation.encode('UTF8','replace')
-      print >>f, description.encode('UTF8','replace')
-      print >>f, link.encode('UTF8','replace')
-      print >>f, listingDate.encode('UTF8','replace')
-      print >>f, "------------------------------------------------------------------"
-      print >>f, "\n"
-
+   stop_runtime(conn,runtimeId)
    conn.commit()
 
-def start_runtime():
-   conn = sqlite3.connect(conf.DB_FILENAME)   
+def start_runtime(conn):
    cur = conn.cursor()
    cur.execute("insert into runtime (startTime) values (?);",(datetime.datetime.now(),))
-   conn.commit()
    return cur.lastrowid
+
+def stop_runtime(conn,id):
+   cur = conn.cursor()
+   cur.execute("update runtime set endTime = ? where id = ?;",(datetime.datetime.now(),id,))
 
 
 def get_id_by_prefix(table, prefixName):
