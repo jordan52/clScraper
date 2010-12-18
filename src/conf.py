@@ -27,3 +27,5 @@ SENDER ='jordan52@gmail.com' # the e-mail sender (may not work with all SMTP pro
 BATCH_SIZE =1 # minimum number of listings to send at one time
 DB_FILENAME='clScraper.db'
 SCHEMA_FILENAME='clScraperSchema.sql'
+CITIES=['stlouis','columbiamo']
+CATEGORIES=['msg','sys']

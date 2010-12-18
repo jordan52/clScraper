@@ -1,7 +1,6 @@
 # code started with craigslist-mailer.py but doesn't much resemble it anymore
 
 import xml.dom.minidom
-
 import sys
 import random
 import time
@@ -14,20 +13,32 @@ import smtplib
 import sqlite3
 import datetime
 
-
 def main():
-   parseCl('stlouis', 'msg')
+   while True:
+      for city in conf.CITIES:
+         for cat in conf.CATEGORIES:
+            parseCl(city, cat)
+            sleep_time = random.randint(6,6*2)
+            print "Sleeping %d seconds before next retrieve..." % sleep_time
+            time.sleep(sleep_time)
+      sleep_time = random.randint(60,60*5)
+      print "Sleeping %d seconds before next retrieve..." % sleep_time
+      time.sleep(sleep_time)
 
 def parseCl(city, category):
+   print 'working on ' + city + ' category ' + category
 
-   document = xml.dom.minidom.parse(urllib2.urlopen('http://' + city + '.craigslist.org/' + category + '/index.rss'))
+   try:
+      document = xml.dom.minidom.parse(urllib2.urlopen('http://' + city + '.craigslist.org/' + category + '/index.rss'))
+   except xml.parsers.expat.ExpatError:
+      print 'unable to parse rss feed!'
+      return
 
    conn = sqlite3.connect(conf.DB_FILENAME)
 
    runtimeId = start_runtime(conn)
-   cityId = get_id_by_prefix('city', city)
-   categoryId = get_id_by_prefix('category', category)
-
+   cityId = get_id_by_prefix(conn, 'city', city)
+   categoryId = get_id_by_prefix(conn,'category', category)
 
    for item in document.getElementsByTagName('item'):
       title = item.getElementsByTagName('title')[0].firstChild.data
@@ -35,9 +46,9 @@ def parseCl(city, category):
       description = item.getElementsByTagName('description')[0].firstChild.data
       listingDate = item.getElementsByTagName('dc:date')[0].firstChild.data
       listingLocation = ''
+      listingPrice = ''
 
       # price/location splitter copied from Craigslist finder by Paul Mohr
-
       a = title.rfind("$") # Marker for price
       b = title.rfind("(") # Beginning marker for location
       c = title.rfind(")") # End marker for location
@@ -61,9 +72,18 @@ def parseCl(city, category):
          int(listingDate[17:19])
       ) # Date is in YYYY-MM-DD<T>HH:MM:SS-TZONE format retrieve month and date 
 
-      conn.execute("insert into listing (title, name, location, price, link, description, listingDate,city_id,category_id,runtime_id) values (?,?,?,?,?,?,?,?,?,?)", (title,listingName,listingLocation,listingPrice,link,description,listingDateConverted,cityId,categoryId,runtimeId))
+      # make sure one isn't already in there that has the same title.
+      cur = conn.cursor()
+      cur.execute(('select id from listing where name = ?'), (listingName,))
+      listingExists = False
+      for row in cur:
+         listingExists = True
+
+      if not listingExists:
+         conn.execute("insert into listing (title, name, location, price, link, description, listingDate,city_id,category_id,runtime_id) values (?,?,?,?,?,?,?,?,?,?)", (title,listingName,listingLocation,listingPrice,link,description,listingDateConverted,cityId,categoryId,runtimeId))
    stop_runtime(conn,runtimeId)
    conn.commit()
+   conn.close()
 
 def start_runtime(conn):
    cur = conn.cursor()
@@ -74,9 +94,7 @@ def stop_runtime(conn,id):
    cur = conn.cursor()
    cur.execute("update runtime set endTime = ? where id = ?;",(datetime.datetime.now(),id,))
 
-
-def get_id_by_prefix(table, prefixName):
-   conn = sqlite3.connect(conf.DB_FILENAME)   
+def get_id_by_prefix(conn,table, prefixName):
    cur = conn.cursor()
    cur.execute('select id from ' + table + " where prefix = '" + prefixName + "';")
 
@@ -91,21 +109,19 @@ def get_id_by_prefix(table, prefixName):
 def usage():
     """Usage."""
     print """
-Craigslist Mailer. Copyright (c) 2010 Jake Brukhman.
-python craigslist-mailer.py
+Craigslist Scaper. Copyright (c) 2010 Jordan Woerndle.
+python clScraper.py
 [-q,--queries <STRING,STRING,...>] -- search queries
 [-m,--minAsk <INTEGER>] -- minimum price
 [-M,--maxAsk <INTEGER>] -- maximum price
-[-b,--bedrooms <INTEGER>] -- number of bedrooms
 [-u,--url <STRING>] -- override the url
-[-s,--batch-size <INTEGER>] -- override the batch size (should be >= 1)
 """
 
 def get_args():
-    global QUERIES, MIN_ASK, MAX_ASK, BEDROOMS
+    global QUERIES, MIN_ASK, MAX_ASK
     """Get the commandline arguments."""
     opts,args = getopt.getopt(sys.argv[1:],\
-            "q:m:M:b:u:s:h", ['help', 'query=', 'minAsk=', 'maxAsk=', 'bedrooms=', 'url=', 'batch-size='])
+            "q:m:M:u:s:h", ['help', 'query=', 'minAsk=', 'maxAsk=', 'url=', 'batch-size='])
     for opt, arg in opts:
         if opt in ('-h', '--help'):
             usage()
@@ -116,8 +132,6 @@ def get_args():
             MIN_ASK=str(int(arg)) # checks for integer
         if opt in ('-M', '--maxAsk'):
             MAX_ASK=str(int(arg))
-        if opt in ('-b', '--bedrooms'):
-            BEDROOMS=str(int(arg))
         if opt in ('-u', '--url'):
             conf.CRAIGS_URL=arg
         if opt in ('-s' '--batch-size'):
@@ -162,7 +176,8 @@ def check_db():
       f = open(conf.SCHEMA_FILENAME, 'rt')
       schema = f.read()
       conn.executescript(schema)
-
+      conn.commit()
+   conn.close()
 
 #
 #
