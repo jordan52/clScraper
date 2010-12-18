@@ -32,6 +32,13 @@ create table listing (
     FOREIGN KEY(runtime_id) REFERENCES runtime(id),
     FOREIGN KEY(city_id) REFERENCES city(id),
     FOREIGN KEY(category_id) REFERENCES category(id)
+);
 
+create table analyzed (
+    id        integer primary key autoincrement not null,
+    analyzedDate    date,
+    listing_id integer,
+
+    FOREIGN KEY(listing_id) REFERENCES listing(id)
 );
 

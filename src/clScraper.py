@@ -13,28 +13,30 @@ import smtplib
 import sqlite3
 import datetime
 
-def main():
+def main(conn):
+
    while True:
       for city in conf.CITIES:
          for cat in conf.CATEGORIES:
-            parseCl(city, cat)
-            sleep_time = random.randint(6,6*2)
-            print "Sleeping %d seconds before next retrieve..." % sleep_time
-            time.sleep(sleep_time)
+            parseCl(conn, city, cat)
+            get_prices(conn)
+            #sleep_time = random.randint(6,6*2)
+            #print "Sleeping %d seconds before next retrieve..." % sleep_time
+            #time.sleep(sleep_time)
       sleep_time = random.randint(60,60*5)
       print "Sleeping %d seconds before next retrieve..." % sleep_time
       time.sleep(sleep_time)
 
-def parseCl(city, category):
-   print 'working on ' + city + ' category ' + category
-
+def parseCl(conn, city, category):
+   url = 'http://' + city + '.craigslist.org/' + category + '/index.rss'
    try:
-      document = xml.dom.minidom.parse(urllib2.urlopen('http://' + city + '.craigslist.org/' + category + '/index.rss'))
+      document = xml.dom.minidom.parse(urllib2.urlopen(url))
+   except urllib2.URLError:
+      print 'unable to open ' + url
+      return
    except xml.parsers.expat.ExpatError:
       print 'unable to parse rss feed!'
       return
-
-   conn = sqlite3.connect(conf.DB_FILENAME)
 
    runtimeId = start_runtime(conn)
    cityId = get_id_by_prefix(conn, 'city', city)
@@ -83,7 +85,19 @@ def parseCl(city, category):
          conn.execute("insert into listing (title, name, location, price, link, description, listingDate,city_id,category_id,runtime_id) values (?,?,?,?,?,?,?,?,?,?)", (title,listingName,listingLocation,listingPrice,link,description,listingDateConverted,cityId,categoryId,runtimeId))
    stop_runtime(conn,runtimeId)
    conn.commit()
-   conn.close()
+
+def get_prices(conn):
+   cur = conn.cursor()
+   cur.execute("select id, title, name, description from listing where id not in (select listing_id from analyzed);")
+   for row in cur:
+      print ' getting price for ' + row[1]
+      get_price(conn,row)
+
+def get_price(conn,row):
+   listing_id = row[0]
+
+   #theoretically, we successfully got the pricing data, so add a row to analyzed.
+   conn.execute("insert into analyzed (listing_id,analyzedDate) values (?, ?);",(listing_id,datetime.datetime.now(),))
 
 def start_runtime(conn):
    cur = conn.cursor()
@@ -170,14 +184,15 @@ def check_db():
 
    db_is_new = not os.path.exists(conf.DB_FILENAME)
 
-   conn = sqlite3.connect(conf.DB_FILENAME)
    if db_is_new:
       print 'Creating schema'
       f = open(conf.SCHEMA_FILENAME, 'rt')
       schema = f.read()
+      conn = sqlite3.connect(conf.DB_FILENAME)
+
       conn.executescript(schema)
       conn.commit()
-   conn.close()
+      conn.close()
 
 #
 #
@@ -186,14 +201,18 @@ if __name__=='__main__':
     try:
         check_conf()
         get_args()
+        
         check_db()
-        main()
+
+        conn = sqlite3.connect(conf.DB_FILENAME)
+        main(conn)
     except ValueError, strerror:
         print "Error: ", strerror
         usage()
     except getopt.GetoptError:
         usage()
     except KeyboardInterrupt:
+        conn.close()
         print "Goodbye."
         sys.exit(0)
     sys.exit(2)
